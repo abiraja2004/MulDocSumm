@@ -26,6 +26,7 @@ if  __name__ == "__main__":
             docs = list(d['_critics'].values())
         elif 'idebate' in args.file:
             docs = list(d['_argument_sentences'].values())
+        # TODO: Idebate - small data
         assert len(docs) > args.n, 'docs with number smaller than n'
         selected_docs = random.sample(docs, args.n) # list of str
 
