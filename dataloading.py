@@ -54,8 +54,9 @@ class MulSumData(object):
 
     def build_vocab(self, DOCS, SUMM):
         # not using pretrained word vectors
+        sources = []
         for data in [self.train, self.valid]:
-            sources = [getattr(data, 'doc{}'.format(i))
+            sources += [getattr(data, 'doc{}'.format(i))
                        for i in range(self.n)]
             sources += [getattr(data, 'summ')]
         SUMM.build_vocab(sources, max_size=30000)
@@ -79,7 +80,8 @@ class MulSumData(object):
 
 if __name__ == "__main__":
     import torch
-    
+    from utils import reverse
+
     PATH = '~/hwijeen/MulDocSumm/data'
     FILE = 'rottentomatoes_prepared'
 
@@ -88,4 +90,13 @@ if __name__ == "__main__":
     print(len(data.train_iter)) # only 94
     print(len(data.valid_iter)) # only 12
     print(len(data.test_iter)) # only 12
+
+    for batch in data.train_iter:
+        print(reverse(batch.doc0[0], data.vocab))
+        print(reverse(batch.doc1[0], data.vocab))
+        print(reverse(batch.doc2[0], data.vocab))
+        print(reverse(batch.doc3[0], data.vocab))
+        print(reverse(batch.doc4[0], data.vocab))
+        print(reverse(batch.summ[0], data.vocab))
+        input()
 
