@@ -63,10 +63,10 @@ class FixedEncoder(nn.Module):
         return fixed_enc # (B, hidden_dim*2)
 
 class VariationalEncoder(FixedEncoder):
-    def __init__(self, latent_dim):
-        hidden_dim = self.lstm.hidden_dim * 2
-        if self.lstm.bidirectional:
-            hidden_dim *=  2
+    def __init__(self, latent_dim, vocab_size, hidden_dim, bidirectional):
+        super().__init__(vocab_size, hidden_dim, bidirectional)
+        hidden_dim *= 2
+        hidden_dim = hidden_dim * 2 if bidirectional else hidden_dim
         self.mu_linear = nn.Linear(hidden_dim, latent_dim)
         self.var_linear = nn.Linear(hidden_dim, latent_dim)
 
@@ -80,10 +80,9 @@ class VariationalEncoder(FixedEncoder):
 
 # tie lstm weights with variational encoder
 class PriorNetwork(FixedEncoder):
-    def __init__(self, latent_dim):
-        hidden_dim = self.lstm.hidden_dim
-        if self.lstm.bidirectional:
-            hidden_dim *=  2
+    def __init__(self, latent_dim, vocab_size, hidden_dim, bidirectional):
+        super().__init__(vocab_size, hidden_dim, bidirectional)
+        hidden_dim = hidden_dim * 2 if bidirectional else hidden_dim
         self.mu_linear = nn.Linear(hidden_dim, latent_dim)
         self.var_linear = nn.Linear(hidden_dim, latent_dim)
 
@@ -277,16 +276,21 @@ class Decoder(nn.Module):
         return torch.cat(y, dim=-1) # (B, L)
 
 
-def build_SelfAttnCVAE(vocab_size, hidden_dim, latent_dim, word_drop, bow_loss,
-                  share_emb=False, share_orig_enc=False, device=None):
-    encoder = Encoder(vocab_size, hidden_dim)
-    decoder = Decoder(vocab_size, hidden_dim, latent_dim, word_drop)
+#def build_SelfAttnCVAE(vocab_size, hidden_dim, latent_dim, word_drop, bow_loss,
+#                  share_emb=False, share_orig_enc=False, device=None):
+# TODO: share fixed encoder weight
+# TODO: implement attentions and how to deal with its dimension?
+def build_SelfAttnCVAE(vocab_size, hidden_dim, latent_dim, bidirectional,
+                       context_size, large_z_size,
+                       share_emb=False, share_orig_enc=False, device=None):
+    var_encoder = VariationalEncoder(latent_dim, vocab_size, hidden_dim,
+                                     bidirectional=bidirectional)
+    prior_net = PriorNetwork(latent_dim, vocab_size, hidden_dim, bidirectional)
+    decoder = Decoder(context_size, large_z_size, vocab_size, hidden_dim)
     if share_emb:
         decoder.embedding.weight = encoder.embedding.weight
-    if bow_loss:
-        model = VAELSTM_BOW(encoder, decoder, vocab_size, hidden_dim, latent_dim)
     else:
-        model = VAELSTM(encoder, decoder, vocab_size, hidden_dim, latent_dim)
+        model = SelfAttnCVAE(encoder, decoder, vocab_size, hidden_dim, latent_dim)
     return model.to(device)
 
 
