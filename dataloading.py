@@ -35,6 +35,7 @@ class MulSumData(object):
         logger.info('vocab size... {}'.format(len(self.vocab)))
 
     def build_field(self, maxlen=None):
+        # TODO: field name starting from 1 not 0
         DOCS = [Field(include_lengths=True, batch_first=True,
                         preprocessing=lambda x: x[:maxlen+1],
                         eos_token='<eos>')
