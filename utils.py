@@ -4,6 +4,7 @@ import torch
 from dataloading import EOS_IDX, SOS_IDX, UNK_IDX
 
 
+### data related
 def truncate(x, token=None):
     # delete a special token in a batch
     assert token in ['sos', 'eos', 'both'], 'can only truncate sos or eos'
@@ -13,7 +14,6 @@ def truncate(x, token=None):
     elif token == 'eos': x = x[:, :-1]
     else: x = x[:, 1:-1]
     return (x, lengths)
-
 
 def append(x, token=None):
     # add a special token to a batch
@@ -29,11 +29,9 @@ def append(x, token=None):
         x = torch.cat([sos, x], dim=1)
     return (x, lengths)
 
-
 def reverse(batch, vocab):
     # turn a batch of idx to tokens
     batch = batch.tolist()
-
     def trim(s, t):
         sentence = []
         for w in s:
@@ -46,12 +44,12 @@ def reverse(batch, vocab):
     return batch
 
 
+## KL vanishing related
 def kl_coef(i):
     # coef for KL annealing
     # reaches 1 at i = 22000
     # https://github.com/kefirski/pytorch_RVAE/blob/master/utils/functional.py
     return (math.tanh((i - 3500)/1000) + 1) / 2
-
 
 def word_drop(x, p):
     # p is prob to drop

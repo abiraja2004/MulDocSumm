@@ -48,6 +48,17 @@ class SelfAttnCVAE(nn.Module):
         recon_logits = self.decoder(batch.summ, large_z, context)
         return variational_params, prior_params, recon_logits
 
+    def inference(self, batch):
+        docs = [x for x in zip(batch.fields, list(iter(batch))[0]) if 'doc' in x[0]]
+        prior_params = {}
+        for field, doc in docs:
+            prior_params[field] = self.prior_net(doc)
+        x_fixed_enc = {}
+        for field, doc in docs: # convert to list for multiple iteration
+            _, x_fixed_enc[field] = self.var_encoder(doc, batch.summ)
+        context = self.c_attention(x_fixed_enc)
+        generated = self.decoder.inference(prior_params, context)
+        return generated
 
 class FixedEncoder(nn.Module):
     def __init__(self, vocab_size, hidden_dim=600, bidrectional=True):
@@ -133,26 +144,31 @@ class Decoder(nn.Module):
         recon_logits = self.out(output)
         return recon_logits  # (B, L, vocab_size)
 
-    #def inference(self, orig, z):
-    #    orig, orig_lengths = orig # (B, l), (B,)
-    #    orig = self.embedding(orig) # (B, l, 300)
-    #    orig_packed = pack_padded_sequence(orig, orig_lengths,
-    #                                       batch_first=True)
-    #    _, orig_hidden = self.lstm_orig(orig_packed)
-    #    y = []
-    #    B = orig.size(0)
-    #    input_ = torch.full((B,1), SOS_IDX, device=orig.device,
-    #                        dtype=torch.long)
-    #    hidden = orig_hidden
-    #    for t in range(MAXLEN):
-    #        input_ = self.embedding(input_) # (B, 1, 300)
-    #        input_ = torch.cat([input_, z], dim=-1) # z (B, 1, 1100)
-    #        output, hidden = self.lstm_para(input_, hidden)
-    #        output = self.linear(output) # (B, 1, vocab_size)
-    #        _, topi = output.topk(1) # (B, 1, 1)
-    #        input_ = topi.squeeze(1)
-    #        y.append(input_) # list of (B, 1)
-    #    return torch.cat(y, dim=-1) # (B, L)
+    def inference(self, prior_params, context):
+        # sample from prior_params
+
+        # decode with <s> and context
+        raise NotImplementedError
+
+        #orig, orig_lengths = orig # (B, l), (B,)
+        #orig = self.embedding(orig) # (B, l, 300)
+        #orig_packed = pack_padded_sequence(orig, orig_lengths,
+        #                                   batch_first=True)
+        #_, orig_hidden = self.lstm_orig(orig_packed)
+        #y = []
+        #B = orig.size(0)
+        #input_ = torch.full((B,1), SOS_IDX, device=orig.device,
+        #                    dtype=torch.long)
+        #hidden = orig_hidden
+        #for t in range(MAXLEN):
+        #    input_ = self.embedding(input_) # (B, 1, 300)
+        #    input_ = torch.cat([input_, z], dim=-1) # z (B, 1, 1100)
+        #    output, hidden = self.lstm_para(input_, hidden)
+        #    output = self.linear(output) # (B, 1, vocab_size)
+        #    _, topi = output.topk(1) # (B, 1, 1)
+        #    input_ = topi.squeeze(1)
+        #    y.append(input_) # list of (B, 1)
+        #return torch.cat(y, dim=-1) # (B, L)
 
 
 def build_SelfAttnCVAE(vocab_size, hidden_dim, latent_dim, enc_bidirectional,
@@ -186,8 +202,9 @@ if __name__ == '__main__':
     data = MulSumData(PATH, FILE, 5, DEVICE)
     model = build_SelfAttnCVAE(len(data.vocab), hidden_dim=600, latent_dim=300,
                                enc_bidirectional=True, device=DEVICE)
+    print(model)
     for batch in data.train_iter:
         variational_params, prior_params, recon_logits = model(batch)
-        print('hi')
+        break
 
 
