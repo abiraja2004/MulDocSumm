@@ -50,14 +50,20 @@ class SelfAttnCVAE(nn.Module):
 
     def inference(self, batch):
         docs = [x for x in zip(batch.fields, list(iter(batch))[0]) if 'doc' in x[0]]
+        # sample from prior
         prior_params = {}
         for field, doc in docs:
             prior_params[field] = self.prior_net(doc)
+        zs = {}
+        for field, (mu, log_var) in prior_params.items():
+            zs[field] = self.reparameterize(mu, log_var)
+        large_z = self.z_attention(zs)
+        # self-attention to get c
         x_fixed_enc = {}
         for field, doc in docs: # convert to list for multiple iteration
             _, x_fixed_enc[field] = self.var_encoder(doc, batch.summ)
         context = self.c_attention(x_fixed_enc)
-        generated = self.decoder.inference(prior_params, context)
+        generated = self.decoder.inference(large_z, context)
         return generated
 
 class FixedEncoder(nn.Module):
@@ -110,27 +116,29 @@ class PriorNetwork(FixedEncoder):
 
 class Decoder(nn.Module):
     def __init__(self, enc_hidden_dim, latent_dim, vocab_size, hidden_dim=600,
-                 num_layers=2):
+                 num_layers=2, word_drop=0.1):
                  #word_drop=0.1):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, 300)
         self.linear = nn.Linear(latent_dim, hidden_dim)
         self.lstm = nn.LSTM(300 + enc_hidden_dim, hidden_dim, batch_first=True,
-                                 num_layers=2)
+                                 num_layers=num_layers)
         self.out = nn.Linear(hidden_dim, vocab_size)
         self.num_layers = num_layers
-        #self.word_drop = word_drop
+        self.word_drop = word_drop
 
-    # TODO: consider num_layers
+    # TODO: consider num_layers AND THERE COULD BE OTHER WAYS
     def _transform_hidden(self, large_z):
         # (num_layers, B, hidden_dim)
         h_0 = self.linear(large_z).transpose(0,1).repeat(self.num_layers, 1, 1)
         c_0 = torch.zeros_like(h_0)
         return h_0, c_0
 
+    # TODO can have a x encoder instead of receiving large_z
     def forward(self, y, large_z, context): # train time
         y, lengths = append(truncate(y, 'eos'), 'sos')
-        embedded = self.embedding(y) # (B, l, 300)
+        dropped_y = word_drop(y, self.word_drop)
+        embedded = self.embedding(dropped_y) # (B, l, 300)
         embedded = torch.cat([embedded, context.repeat(1, embedded.size(1), 1)],
                              dim=-1)
         packed = pack_padded_sequence(embedded, lengths, batch_first=True)
@@ -144,11 +152,22 @@ class Decoder(nn.Module):
         recon_logits = self.out(output)
         return recon_logits  # (B, L, vocab_size)
 
-    def inference(self, prior_params, context):
-        # sample from prior_params
-
-        # decode with <s> and context
-        raise NotImplementedError
+    def inference(self, large_z, context):
+        y = []
+        B = context.size(0)
+        input_ = torch.full((B,1), SOS_IDX, device=context.device,
+                            dtype=torch.long)
+        hidden = self._transform_hidden(large_z)
+        for t in range(MAXLEN):
+            # TODO can append large_z to every time step input
+            input_ = self.embedding(input_) # (B, 1, 300)
+            input_ = torch.cat([input_, context], dim=-1)
+            output, hidden = self.lstm(input_, hidden)
+            output = self.out(output) # (B, 1, vocab_size)
+            _, topi = output.topk(1) # (B, 1, 1)
+            input_ = topi.squeeze(1)
+            y.append(input_) # list of (B, 1)
+        return torch.cat(y, dim=-1) # (B, L)
 
         #orig, orig_lengths = orig # (B, l), (B,)
         #orig = self.embedding(orig) # (B, l, 300)
@@ -172,13 +191,14 @@ class Decoder(nn.Module):
 
 
 def build_SelfAttnCVAE(vocab_size, hidden_dim, latent_dim, enc_bidirectional,
-                       attn_type='proj',
-                       share_emb=True, share_fixed_enc=True, device=None):
+                       attn_type='proj', share_emb=True, share_fixed_enc=True,
+                       word_drop=0.1, device=None):
     var_encoder = VariationalEncoder(latent_dim, vocab_size, hidden_dim,
                                      bidirectional=enc_bidirectional)
     prior_net = PriorNetwork(latent_dim, vocab_size, hidden_dim, enc_bidirectional)
     enc_hidden_dim = hidden_dim * 2 if enc_bidirectional else hidden_dim
-    decoder = Decoder(enc_hidden_dim, latent_dim, vocab_size, hidden_dim)
+    decoder = Decoder(enc_hidden_dim, latent_dim, vocab_size, hidden_dim,
+                      word_drop=word_drop)
     z_attention = get_attention(attn_type, latent_dim)
     c_attention = get_attention(attn_type, enc_hidden_dim)
     if share_emb:

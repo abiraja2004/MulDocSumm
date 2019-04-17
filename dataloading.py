@@ -42,7 +42,7 @@ class MulSumData(object):
                 for _ in range(self.n)] # list
         SUMM = Field(include_lengths=True, batch_first=True,
                         preprocessing=lambda x: x[:maxlen+1],
-                        eos_token='<eos>')
+                        eos_token='<eos>', is_target=True)
         return DOCS, SUMM
 
     def build_dataset(self, DOCS, SUMM):
@@ -53,6 +53,7 @@ class MulSumData(object):
         train, test, valid = data.split(split_ratio=[0.8, 0.1, 0.1])
         return train, valid, test
 
+    # TODO: check total vocab size
     def build_vocab(self, DOCS, SUMM):
         # not using pretrained word vectors
         sources = []

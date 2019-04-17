@@ -1,10 +1,13 @@
 import logging
 import random
+from copy import deepcopy
+from collections import defaultdict
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from nlgeval import NLGEval
 
 from dataloading import PAD_IDX
 from utils import reverse, kl_coef
@@ -42,13 +45,38 @@ class Stats(object):
         logger.info(msg)
 
 
+class EarlyStopper():
+    def __init__(self, patience, metric):
+        self.patience = patience
+        self.metric = metric # 'Bleu_1', ..., 'METEOR', 'ROUGE_L'
+        self.count = 0
+        self.best_score = defaultdict(lambda: 0)
+
+    def stop(self, cur_score):
+        if self.best_score[self.metric] > cur_score[self.metric]:
+            if self.count <= self.patience:
+                self.count += 1
+                logger.info('Counting early stop patience... {}'.format(self.count))
+                return False
+            else:
+                logger.info('Early stopping patience exceeded. Stopping training...')
+                return True # halt training
+        else:
+            self.count = 0
+            self.best_score = cur_score
+            return False
+
+
 class Trainer(object):
-    def __init__(self, model, data, lr=0.001, to_record=None):
+    def __init__(self, model, data, lr=0.001, to_record=None, patience=3,
+                 metric='Bleu_1'):
         self.model = model
         self.data = data
         self.criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
         self.optimizer = optim.Adam(model.parameters(), lr=lr)
         self.stats = Stats(to_record)
+        self.evaluator = NLGEval(no_skipthoughts=True, no_glove=True)
+        self.earlystopper = EarlyStopper(patience=patience, metric=metric)
 
     @staticmethod
     def kl_div_two_normal(p_params, q_params):
@@ -90,7 +118,7 @@ class Trainer(object):
 
             if closed_test:
                 with torch.no_grad():
-                    self.inference(data_type='train')
+                    metrics_train = self.evaluate(data_type='train')
             # evaluate on dev set at the end of every epoch
             with torch.no_grad():
                 valid_stats = {name: [] for name in self.stats.to_record}
@@ -98,29 +126,33 @@ class Trainer(object):
                     recon_loss, kl_loss, _= self.compute_loss(batch)
                     self.stats.record_stats(recon_loss, kl_loss, stat=valid_stats)
                 self.stats.report_stats(epoch, stat=valid_stats)
-                self.inference(data_type='valid')
+                metrics_valid = self.evaluate(data_type='valid')
+            if self.earlystopper.stop(metrics_valid):
+                self.model.load_state_dict(best_model)
+            else:
+                best_model = deepcopy(self.model.state_dict())
+            metircs_test = self.evaluate(data_type='test')
 
-    def inference(self, data_type):
-        if data_type == 'train':
-            data_iter = self.data.train_iter
-        elif data_type == 'valid':
-            data_iter = self.data.valid_iter
-        elif data_type == 'test':
-            data_iter = self.data.test_iter
+    def evaluate(self, data_type):
+        data_iter = getattr(self.data, '{}_iter'.format(data_type))
 
         random_idx = random.randint(0, len(data_iter))
         for idx, batch in enumerate(data_iter): # to get a random batch
             if idx == random_idx: break
-        paraphrased = self.model.inference(batch.orig)
-        paraphrased = reverse(paraphrased, self.data.vocab)
-        original = reverse(batch.orig[0], self.data.vocab)
-        reference = reverse(batch.para[0], self.data.vocab) \
-            if data_type == 'valid' else None
-        print('sample paraphrases in {} data'.format(data_type))
-        if data_type == 'valid':
-            for orig, para, ref in zip(original, paraphrased, reference):
-                print(orig, '\t => \t', para)
-                print('\t\t\t reference: ', ref)
-        else:
-            for orig, para in zip(original, paraphrased):
-                print(orig, '\t => \t', para)
+        summarized = self.model.inference(batch)
+        summarized = reverse(summarized, self.data.vocab)
+        # FIXME: fragile
+        originals = []
+        # TODO: better way?
+        for f in batch.input_fields:
+            originals.append(reverse(getattr(batch, f)[0], self.data.vocab))
+        reference = reverse(batch.summ[0], self.data.vocab)
+        print('sample summary in {} data'.format(data_type))
+        for orig, summ, ref in zip(zip(*originals), summarized, reference):
+            print('orig :', '\n'.join(orig))
+            print('\t\t\tsumm: ', summ)
+            print('\t\t\treference: ', ref)
+            print()
+        metrics_dict = self.evaluator.compute_metrics([reference], summarized)
+        print('quantitative results', metrics_dict)
+        return metrics_dict
