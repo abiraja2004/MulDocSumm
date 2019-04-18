@@ -1,5 +1,5 @@
+import os
 import logging
-import random
 from copy import deepcopy
 from collections import defaultdict
 
@@ -118,7 +118,7 @@ class Trainer(object):
 
             if closed_test:
                 with torch.no_grad():
-                    metrics_train = self.evaluate(data_type='train')
+                    metrics_train = self.evaluate('train', epoch)
             # evaluate on dev set at the end of every epoch
             with torch.no_grad():
                 valid_stats = {name: [] for name in self.stats.to_record}
@@ -126,33 +126,34 @@ class Trainer(object):
                     recon_loss, kl_loss, _= self.compute_loss(batch)
                     self.stats.record_stats(recon_loss, kl_loss, stat=valid_stats)
                 self.stats.report_stats(epoch, stat=valid_stats)
-                metrics_valid = self.evaluate(data_type='valid')
+                metrics_valid = self.evaluate('valid', epoch)
             if self.earlystopper.stop(metrics_valid):
                 self.model.load_state_dict(best_model)
             else:
                 best_model = deepcopy(self.model.state_dict())
-            metircs_test = self.evaluate(data_type='test')
+        metircs_test = self.evaluate('test')
 
-    def evaluate(self, data_type):
+    def evaluate(self, data_type, epoch=None):
         data_iter = getattr(self.data, '{}_iter'.format(data_type))
-
-        random_idx = random.randint(0, len(data_iter))
-        for idx, batch in enumerate(data_iter): # to get a random batch
-            if idx == random_idx: break
-        summarized = self.model.inference(batch)
-        summarized = reverse(summarized, self.data.vocab)
-        # FIXME: fragile
-        originals = []
-        # TODO: better way?
-        for f in batch.input_fields:
-            originals.append(reverse(getattr(batch, f)[0], self.data.vocab))
-        reference = reverse(batch.summ[0], self.data.vocab)
-        print('sample summary in {} data'.format(data_type))
-        for orig, summ, ref in zip(zip(*originals), summarized, reference):
-            print('orig :', '\n'.join(orig))
-            print('\t\t\tsumm: ', summ)
-            print('\t\t\treference: ', ref)
-            print()
+        # TODO: various experiment with uuid
+        if not os.path.isdir('experiment'): os.mkdir('experiment')
+        filename = 'experiment/{}_epoch{}'.format(data_type, epoch)
+        f = open(filename, 'w')
+        for batch in data_iter: # to get a random batch
+            originals = []
+            for field in batch.input_fields:
+                originals.append(reverse(getattr(batch, field)[0], self.data.vocab))
+            summarized = self.model.inference(batch)
+            summarized = reverse(summarized, self.data.vocab)
+            reference = reverse(batch.summ[0], self.data.vocab)
+            for orig, summ, ref in zip(zip(*originals), summarized, reference):
+                f.write('===== orig =====\n' + '\n'.join(orig) + '\n')
+                f.write('===== generated summmary =====\n' + summ + '\n')
+                f.write('===== reference ====\n' + ref + '\n\n')
         metrics_dict = self.evaluator.compute_metrics([reference], summarized)
-        print('quantitative results', metrics_dict)
+        msg = 'quantitative results from {} data'.format(data_type) + '\n' +\
+              str(metrics_dict)
+        logger.info(msg)
+        f.write(msg+'\n')
+        f.close()
         return metrics_dict

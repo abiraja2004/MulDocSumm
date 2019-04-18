@@ -25,5 +25,5 @@ if  __name__ == "__main__":
     selfattnCVAE = build_SelfAttnCVAE(len(data.vocab), hidden_dim=600, latent_dim=300,
                                enc_bidirectional=True, word_drop=0.2, device=DEVICE)
     trainer = Trainer(selfattnCVAE, data, lr=0.001, to_record=['recon_loss', 'kl_loss'])
-    trainer.train(num_epoch=50, closed_test=False)
+    trainer.train(num_epoch=50, closed_test=True)
 
