@@ -1,5 +1,5 @@
 ## Multi-document Summarization with CVAE
-
+In progress
 
 ## Data
 The data consist of 1) rottentomatoes moview reviews and 2) arguments from Idebate. Detailed description of the data is in [this paper by Wang et al.](https://www.aclweb.org/anthology/N16-1007)
