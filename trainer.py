@@ -1,4 +1,3 @@
-import os
 import logging
 from copy import deepcopy
 from collections import defaultdict
@@ -43,6 +42,7 @@ class Stats(object):
             msg = 'valid loss at epoch {}: {:.2f} ~ recon {:.2f} + kl {:.2f}'\
                 .format(epoch, sum_loss, losses[0], losses[1])
         logger.info(msg)
+        return sum_loss
 
 
 class EarlyStopper():
@@ -51,9 +51,11 @@ class EarlyStopper():
         self.metric = metric # 'Bleu_1', ..., 'METEOR', 'ROUGE_L'
         self.count = 0
         self.best_score = defaultdict(lambda: 0)
+        self.is_improved = False
 
     def stop(self, cur_score):
         if self.best_score[self.metric] > cur_score[self.metric]:
+            self.is_improved = False
             if self.count <= self.patience:
                 self.count += 1
                 logger.info('Counting early stop patience... {}'.format(self.count))
@@ -62,6 +64,7 @@ class EarlyStopper():
                 logger.info('Early stopping patience exceeded. Stopping training...')
                 return True # halt training
         else:
+            self.is_improved = True
             self.count = 0
             self.best_score = cur_score
             return False
@@ -97,8 +100,11 @@ class Trainer(object):
         coef = kl_coef(total_step) # kl annlealing
         return recon_loss, kl_loss, coef
 
-    def train(self, num_epoch, closed_test=False):
+    def train(self, num_epoch, verbose=False):
         total_step = 0 # for KL annealing
+        if verbose:
+            train_losses, train_metrics = [], []
+            valid_losses, valid_metrics = [], []
         for epoch in range(1, num_epoch+1, 1):
             # TODO: print stats on what basis?
             #self.stats.reset_stats()
@@ -114,24 +120,35 @@ class Trainer(object):
                 self.optimizer.step()
 
                 if step % 10 == 0:
-                    self.stats.report_stats(epoch, step=step)
+                    train_loss = self.stats.report_stats(epoch, step=step)
 
-            if closed_test:
+            if verbose:
                 with torch.no_grad():
-                    metrics_train = self.evaluate('train', epoch)
+                    train_metrics.append(self.evaluate('train', epoch))
+                train_losses.append(train_loss)
+
             # evaluate on dev set at the end of every epoch
             with torch.no_grad():
                 valid_stats = {name: [] for name in self.stats.to_record}
                 for batch in self.data.valid_iter:
                     recon_loss, kl_loss, _= self.compute_loss(batch)
                     self.stats.record_stats(recon_loss, kl_loss, stat=valid_stats)
-                self.stats.report_stats(epoch, stat=valid_stats)
+                valid_loss = self.stats.report_stats(epoch, stat=valid_stats)
                 metrics_valid = self.evaluate('valid', epoch)
+                valid_metrics.append(metrics_valid)
+                valid_losses.append(valid_loss)
             if self.earlystopper.stop(metrics_valid):
                 self.model.load_state_dict(best_model)
-            else:
+                logger.info('End of training. Best model was from epoch {}'.format(best_epoch))
+                break
+            elif self.earlystopper.is_improved:
                 best_model = deepcopy(self.model.state_dict())
+                best_epoch = epoch
+            else: continue
         metircs_test = self.evaluate('test')
+        if verbose:
+            return {'train_losses': train_losses, 'train_metrics': train_metrics,
+                    'valid_losses': valid_losses, 'valid_metrics': valid_metrics}
 
     def evaluate(self, data_type, epoch=None):
         data_iter = getattr(self.data, '{}_iter'.format(data_type))

@@ -1,11 +1,13 @@
 import os
 import math
+import logging
 
 import torch
+import matplotlib.pyplot as plt
 
 from dataloading import EOS_IDX, SOS_IDX, UNK_IDX
 
-
+logger = logging.getLogger()
 ### data related
 def truncate(x, token=None):
     # delete a special token in a batch
@@ -69,3 +71,52 @@ def write_to_file(write_list, msg, data_type, epoch, savedir='experiment'):
                 f.write('===== generated summmary =====\n' + summ + '\n')
                 f.write('===== reference ====\n' + ref + '\n\n')
         f.write(msg)
+
+
+# TODO decorator?
+def plot_wrapper(plot_func, *args, filename=None):
+    def ret_func():
+        plt.figure()
+        plot_func(*args)
+        plt.legend()
+        plt.savefig(filename)
+    return ret_func
+
+def plot_kl_loss(kl_stats, filename='kl_stats.png'):
+    steps = range(len(kl_stats))
+    plt.figure(1)
+    plt.plot(steps, kl_stats, label='kl_loss')
+    plt.plot(steps, [kl_coef(i) for i in steps], label='kl_coef')
+    plt.xlabel('Step')
+    plt.ylabel('KL loss')
+    plt.legend()
+    plt.savefig(filename)
+    logger.info('kl_loss graph saved at {}'.format(filename))
+
+def plot_learning_curve(train_losses, valid_losses, filename='learning_curve.png'):
+    epochs = range(1, len(train_losses)+1, 1)
+    plt.figure(2)
+    plt.plot(epochs, train_losses, label='train_loss')
+    plt.plot(epochs, valid_losses, label='valid_loss')
+    plt.xlabel('Step')
+    plt.ylabel('Recon loss + KL loss')
+    plt.legend()
+    plt.savefig(filename)
+    logger.info('learning curve saved at {}'.format(filename))
+
+def plot_metrics(train_metrics, valid_metrics, filename='metrics.png'):
+    epochs = range(1, len(train_metrics)+1, 1)
+    train_bleu_1 = [m['Bleu_1'] for m in train_metrics]
+    train_meteor = [m['METEOR'] for m in train_metrics]
+    valid_bleu_1 = [m['Bleu_1'] for m in valid_metrics]
+    valid_meteor = [m['METEOR'] for m in valid_metrics]
+    plt.figure(3)
+    plt.plot(epochs, train_bleu_1, label='train_bleu_1')
+    plt.plot(epochs, train_meteor, label='train_meteor')
+    plt.plot(epochs, valid_bleu_1, label='valid_bleu_1')
+    plt.plot(epochs, valid_meteor, label='train_meteor')
+    plt.xlabel('Epoch')
+    plt.ylabel('Performance')
+    plt.legend()
+    plt.savefig(filename)
+    logger.info('metrics graph saved at {}'.format(filename))
