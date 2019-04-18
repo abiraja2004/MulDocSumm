@@ -10,7 +10,7 @@ import torch.optim as optim
 from nlgeval import NLGEval
 
 from dataloading import PAD_IDX
-from utils import reverse, kl_coef
+from utils import reverse, kl_coef, write_to_file
 
 logger = logging.getLogger(__name__)
 
@@ -135,10 +135,7 @@ class Trainer(object):
 
     def evaluate(self, data_type, epoch=None):
         data_iter = getattr(self.data, '{}_iter'.format(data_type))
-        # TODO: various experiment with uuid
-        if not os.path.isdir('experiment'): os.mkdir('experiment')
-        filename = 'experiment/{}_epoch{}'.format(data_type, epoch)
-        f = open(filename, 'w')
+        write_list= []
         for batch in data_iter: # to get a random batch
             originals = []
             for field in batch.input_fields:
@@ -146,14 +143,10 @@ class Trainer(object):
             summarized = self.model.inference(batch)
             summarized = reverse(summarized, self.data.vocab)
             reference = reverse(batch.summ[0], self.data.vocab)
-            for orig, summ, ref in zip(zip(*originals), summarized, reference):
-                f.write('===== orig =====\n' + '\n'.join(orig) + '\n')
-                f.write('===== generated summmary =====\n' + summ + '\n')
-                f.write('===== reference ====\n' + ref + '\n\n')
+            write_list.append(zip(zip(*originals), summarized, reference))
         metrics_dict = self.evaluator.compute_metrics([reference], summarized)
         msg = 'quantitative results from {} data'.format(data_type) + '\n' +\
               str(metrics_dict)
         logger.info(msg)
-        f.write(msg+'\n')
-        f.close()
+        write_to_file(write_list, msg, data_type, epoch)
         return metrics_dict

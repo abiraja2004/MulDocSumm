@@ -1,4 +1,6 @@
+import os
 import math
+
 import torch
 
 from dataloading import EOS_IDX, SOS_IDX, UNK_IDX
@@ -43,7 +45,6 @@ def reverse(batch, vocab):
     batch = [' '.join([vocab.itos[i] for i in ex]) for ex in batch]
     return batch
 
-
 ## KL vanishing related
 def kl_coef(i):
     # coef for KL annealing
@@ -57,3 +58,14 @@ def word_drop(x, p):
     x.masked_fill_(mask, UNK_IDX)
     return x
 
+# TODO: various experiment with uuid
+def write_to_file(write_list, msg, data_type, epoch, savedir='experiment'):
+    if not os.path.isdir(savedir): os.mkdir(savedir)
+    filename = '{}/{}_epoch{}'.format(savedir, data_type, epoch)
+    with open(filename, 'w') as f:
+        for to_write in write_list:
+            for orig, summ, ref in to_write:
+                f.write('===== orig =====\n' + '\n'.join(orig) + '\n')
+                f.write('===== generated summmary =====\n' + summ + '\n')
+                f.write('===== reference ====\n' + ref + '\n\n')
+        f.write(msg)
