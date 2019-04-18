@@ -99,7 +99,7 @@ class Trainer(object):
 
     def train(self, num_epoch, closed_test=False):
         total_step = 0 # for KL annealing
-        for epoch in range(1, num_epoch, 1):
+        for epoch in range(1, num_epoch+1, 1):
             # TODO: print stats on what basis?
             #self.stats.reset_stats()
             for step, batch in enumerate(self.data.train_iter, 1):
