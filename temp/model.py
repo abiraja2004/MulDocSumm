@@ -10,11 +10,6 @@ from utils import append, truncate, word_drop
 MAXLEN = 30
 
 
-class ConductorCVAE(nn.Module):
-    def __init__(self):
-        pass
-
-
 class SelfAttnCVAE(nn.Module):
     def __init__(self, var_encoder, prior_net, decoder, z_attention, c_attention):
         super().__init__()
@@ -122,7 +117,6 @@ class PriorNetwork(FixedEncoder):
 class Decoder(nn.Module):
     def __init__(self, enc_hidden_dim, latent_dim, vocab_size, hidden_dim=600,
                  num_layers=2, word_drop=0.1):
-                 #word_drop=0.1):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, 300)
         self.linear = nn.Linear(latent_dim, hidden_dim)
@@ -136,21 +130,21 @@ class Decoder(nn.Module):
     def _transform_hidden(self, large_z):
         # (num_layers, B, hidden_dim)
         h_0 = self.linear(large_z).transpose(0,1).repeat(self.num_layers, 1, 1)
-        c_0 = torch.zeros_like(h_0)
+        #c_0 = torch.zeros_like(h_0)
+        c_0 = h_0.clone()
         return h_0, c_0
 
     # TODO can have a x encoder instead of receiving large_z
     def forward(self, y, large_z, context): # train time
         y, lengths = append(truncate(y, 'eos'), 'sos')
-        dropped_y = word_drop(y, self.word_drop)
-        embedded = self.embedding(dropped_y) # (B, l, 300)
+        if self.word_drop > 0.:
+            y = word_drop(y, self.word_drop)
+        embedded = self.embedding(y) # (B, l, 300)
         embedded = torch.cat([embedded, context.repeat(1, embedded.size(1), 1)],
                              dim=-1)
         packed = pack_padded_sequence(embedded, lengths, batch_first=True)
         init_hidden = self._transform_hidden(large_z)
         packed_output, _ = self.lstm(packed, init_hidden)
-        #if self.word_drop > 0.:
-        #    para = word_drop(para, self.word_drop) # from Bowman's paper
         total_length = embedded.size(1)
         output, _ = pad_packed_sequence(packed_output, batch_first=True,
                                      total_length=total_length)
@@ -198,13 +192,13 @@ def build_SelfAttnCVAE(vocab_size, hidden_dim, latent_dim, enc_bidirectional,
 
 if __name__ == '__main__':
 
-    from dataloading import MulSumData
+    from dataloading2 import MulSumData
 
     PATH = '~/hwijeen/MulDocSumm/data'
     FILE = 'rottentomatoes_prepared'
     DEVICE = torch.device('cuda:1')
 
-    data = MulSumData(PATH, FILE, 5, DEVICE)
+    data = MulSumData(PATH, FILE, 99, DEVICE)
     model = build_SelfAttnCVAE(len(data.vocab), hidden_dim=600, latent_dim=300,
                                enc_bidirectional=True, device=DEVICE)
     print(model)

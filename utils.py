@@ -48,11 +48,14 @@ def reverse(batch, vocab):
     return batch
 
 ## KL vanishing related
+#def kl_coef(i):
+#    # coef for KL annealing
+#    # reaches 1 at i = 22000
+#    # https://github.com/kefirski/pytorch_RVAE/blob/master/utils/functional.py
+#    return (math.tanh((i - 3500)/1000) + 1) / 2
+
 def kl_coef(i):
-    # coef for KL annealing
-    # reaches 1 at i = 22000
-    # https://github.com/kefirski/pytorch_RVAE/blob/master/utils/functional.py
-    return (math.tanh((i - 3500)/1000) + 1) / 2
+    return 1 / (1 + math.exp(-0.005 * (i - 800)))
 
 def word_drop(x, p):
     # p is prob to drop

@@ -153,7 +153,7 @@ class Trainer(object):
     def evaluate(self, data_type, epoch=None):
         data_iter = getattr(self.data, '{}_iter'.format(data_type))
         write_list= []
-        for batch in data_iter: # to get a random batch
+        for batch in data_iter:
             originals = []
             for field in batch.input_fields:
                 originals.append(reverse(getattr(batch, field)[0], self.data.vocab))

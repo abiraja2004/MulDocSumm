@@ -21,7 +21,7 @@ if  __name__ == "__main__":
     EPOCH = 50
     WORD_DROP = 0.2
 
-    data = MulSumData(DATA_DIR, FILE, 5, DEVICE)
+    data = MulSumData(DATA_DIR, FILE, 99, DEVICE)
     selfattnCVAE = build_SelfAttnCVAE(len(data.vocab), hidden_dim=600, latent_dim=300,
                                enc_bidirectional=True, word_drop=WORD_DROP, device=DEVICE)
     trainer = Trainer(selfattnCVAE, data, lr=0.001, to_record=['recon_loss', 'kl_loss'])
